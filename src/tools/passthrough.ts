@@ -44,6 +44,38 @@ export function registerPassthroughTools(server: McpServer, apiKey: string): voi
     },
   );
 
+  // --- graphql_mutation ---------------------------------------------------
+  server.registerTool(
+    "graphql_mutation",
+    {
+      title: "Run a raw GraphQL mutation",
+      description:
+        "Execute an arbitrary GraphQL mutation against the Swapcard Content API. The full-write escape " +
+        "hatch for operations the manage_* tools don't cover (products, promo codes, ticket types, " +
+        "custom fields, groups, etc.). REQUIRES confirm:true. Use introspect_schema('Mutation') to " +
+        "discover operations and their input types.",
+      inputSchema: {
+        query: z.string().describe("A GraphQL mutation document."),
+        variables: z.record(z.unknown()).optional().describe("Variables object for the mutation."),
+        confirm: z.boolean().optional().describe("Must be true to execute the mutation."),
+      },
+    },
+    async ({ query, variables, confirm }) => {
+      try {
+        if (!/^\s*(#[^\n]*\n\s*)*mutation\b/i.test(query)) {
+          return errorResult(new Error("Not a mutation. Use graphql_query for read-only operations."));
+        }
+        if (confirm !== true) {
+          return errorResult(new Error("Refused: graphql_mutation requires confirm:true to execute."));
+        }
+        const { data } = await swapcardGraphQL(apiKey, query, variables);
+        return jsonResult(data);
+      } catch (e) {
+        return errorResult(e);
+      }
+    },
+  );
+
   // --- introspect_schema --------------------------------------------------
   server.registerTool(
     "introspect_schema",
