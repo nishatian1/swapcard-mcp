@@ -1,5 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerReadTools } from "./tools/reads.js";
+import { registerPassthroughTools } from "./tools/passthrough.js";
 
 /**
  * Build an MCP server instance bound to a single teammate's Swapcard API key.
@@ -16,6 +17,7 @@ export function buildServer(apiKey: string): McpServer {
   );
 
   registerReadTools(server, apiKey);
+  registerPassthroughTools(server, apiKey);
 
   return server;
 }
