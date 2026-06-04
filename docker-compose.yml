@@ -1,0 +1,14 @@
+# Deploy on KVM8. Reached by Caddy via the shared network by container name.
+# No ports published (Docker bypasses UFW — public access only via Caddy/443).
+services:
+  swapcard-mcp:
+    build: .
+    container_name: swapcard-mcp
+    restart: unless-stopped
+    env_file: .env
+    networks:
+      - fhs-enrichment_default
+
+networks:
+  fhs-enrichment_default:
+    external: true

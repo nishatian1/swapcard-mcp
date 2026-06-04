@@ -3,6 +3,8 @@
 An MCP server that exposes the **Swapcard organizer API** (Content + Analytics) as tools so a team can
 operate Swapcard from inside Claude (Desktop, Code, and — once Phase 4 lands — claude.ai web).
 
+**🟢 Live:** `https://mcp.fhsagents.site/swapcard` (deployed on KVM8, Docker + Caddy).
+
 - **Auth model:** the Swapcard API key *is* the credential. The server is stateless and stores no key;
   each connection supplies the key (via the `Authorization` header), which the server forwards to Swapcard.
 - **Transport:** MCP Streamable HTTP (`@modelcontextprotocol/sdk`).
@@ -16,8 +18,8 @@ operate Swapcard from inside Claude (Desktop, Code, and — once Phase 4 lands �
 | 1 | All 7 read tools + `graphql_query` + `introspect_schema` | ✅ done |
 | 2 | 9 `manage_*` write tools + `send_push_notification` + `graphql_mutation` | ✅ done |
 | 3 | `get_analytics` (bounded streaming export) | ✅ done — **all 21 tools complete** |
-| 4 | Web "paste your key" OAuth wrapper | ⏳ |
-| 5 | Dockerize + Caddy deploy on `mcp.fhsagents.site/swapcard` | ⏳ |
+| 5a | Dockerize + Caddy deploy on `mcp.fhsagents.site/swapcard` | ✅ **live** (Desktop/Code) |
+| 4 | Web "paste your key" OAuth wrapper (claude.ai browser) | ⏳ next |
 
 ## Develop
 
