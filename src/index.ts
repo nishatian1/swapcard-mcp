@@ -2,23 +2,118 @@ import { randomUUID } from "node:crypto";
 import express from "express";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
+import { mcpAuthRouter, getOAuthProtectedResourceMetadataUrl } from "@modelcontextprotocol/sdk/server/auth/router.js";
 import { config } from "./config.js";
 import { buildServer } from "./server.js";
-import { extractApiKey } from "./auth.js";
+import { swapcardGraphQL } from "./swapcard/client.js";
+import { swapcardOAuthProvider } from "./oauth/provider.js";
+import { createAuthCode } from "./oauth/store.js";
+import { renderKeyPage } from "./oauth/page.js";
+import { isOurToken, readToken } from "./oauth/tokens.js";
+
+const RESOURCE_URL = config.publicBaseUrl; // e.g. https://mcp.fhsagents.site/swapcard
+const ISSUER_URL = new URL(RESOURCE_URL).origin; // e.g. https://mcp.fhsagents.site
+const resourceMetadataUrl = getOAuthProtectedResourceMetadataUrl(new URL(RESOURCE_URL));
 
 const app = express();
-app.use(express.json({ limit: "1mb" }));
-
-/** Active sessions: Mcp-Session-Id -> transport. Each holds a server bound to one teammate's key. */
-const transports: Record<string, StreamableHTTPServerTransport> = {};
+app.disable("x-powered-by");
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true, name: "swapcard-mcp", version: "0.1.0" });
 });
 
-// MCP endpoint (client -> server messages)
-app.post(config.mcpPath, async (req, res) => {
+// --- OAuth (claude.ai web "paste your key" flow) ---
+// Serves /.well-known/oauth-authorization-server, /.well-known/oauth-protected-resource,
+// /authorize, /token, /register, /revoke. Each handler parses its own body.
+app.use(
+  mcpAuthRouter({
+    provider: swapcardOAuthProvider,
+    issuerUrl: new URL(ISSUER_URL),
+    resourceServerUrl: new URL(RESOURCE_URL),
+    resourceName: "Swapcard MCP",
+    scopesSupported: [],
+  }),
+);
+
+// The authorize page posts here (NOT under /authorize/* — that prefix is owned by the SDK
+// auth router, whose body parser would consume this stream first). Validate the pasted key,
+// mint a one-time code, redirect back.
+app.post("/oauth/key", express.urlencoded({ extended: false }), async (req, res) => {
+  const { client_id, redirect_uri, code_challenge, state, scope, resource, apiKey } = req.body as Record<string, string>;
+  const reRender = (error: string) =>
+    res.status(400).send(
+      renderKeyPage({
+        clientId: client_id ?? "",
+        redirectUri: redirect_uri ?? "",
+        codeChallenge: code_challenge ?? "",
+        state: state ?? "",
+        scope: scope ?? "",
+        resource: resource ?? "",
+        error,
+      }),
+    );
+
+  if (!apiKey || !redirect_uri || !code_challenge || !client_id) {
+    reRender("Missing required fields. Please start the connection again from Claude.");
+    return;
+  }
   try {
+    await swapcardGraphQL(apiKey, "{ communities { nodes { id } } }");
+  } catch {
+    reRender("That Swapcard API key was rejected. Check it and try again.");
+    return;
+  }
+  const code = createAuthCode({
+    swapcardKey: apiKey,
+    codeChallenge: code_challenge,
+    redirectUri: redirect_uri,
+    clientId: client_id,
+  });
+  const url = new URL(redirect_uri);
+  url.searchParams.set("code", code);
+  if (state) url.searchParams.set("state", state);
+  res.redirect(302, url.toString());
+});
+
+/** Resolve the Swapcard key from the request: our OAuth token (web) or a raw key (Desktop/Code). */
+function resolveKey(req: express.Request): { key?: string; needAuth?: boolean } {
+  const raw = req.headers["authorization"];
+  const header = Array.isArray(raw) ? raw[0] : raw;
+  if (!header) {
+    return config.fallbackApiKey ? { key: config.fallbackApiKey } : { needAuth: true };
+  }
+  const m = /^Bearer\s+(.+)$/i.exec(header.trim());
+  const token = (m ? m[1] : header).trim();
+  if (!token) return { needAuth: true };
+  if (isOurToken(token)) {
+    const payload = readToken(token);
+    return payload ? { key: payload.k } : { needAuth: true }; // expired/invalid → re-auth
+  }
+  return { key: token }; // raw Swapcard key
+}
+
+function requireAuth(res: express.Response): void {
+  res.setHeader("WWW-Authenticate", `Bearer resource_metadata="${resourceMetadataUrl}"`);
+  res.status(401).json({
+    jsonrpc: "2.0",
+    id: null,
+    error: { code: -32001, message: "Authentication required. Provide a Swapcard API key or complete the OAuth flow." },
+  });
+}
+
+// --- MCP endpoint ---
+const transports: Record<string, StreamableHTTPServerTransport> = {};
+
+app.post(config.mcpPath, express.json({ limit: "1mb" }), async (req, res) => {
+  try {
+    // Auth first: any unauthenticated request returns 401 + WWW-Authenticate so web clients
+    // discover the OAuth flow. (Desktop/Code send a raw key; web sends our OAuth token.)
+    const { key, needAuth } = resolveKey(req);
+    if (needAuth || !key) {
+      requireAuth(res);
+      return;
+    }
+
     const sessionId = req.headers["mcp-session-id"] as string | undefined;
     let transport = sessionId ? transports[sessionId] : undefined;
 
@@ -32,17 +127,7 @@ app.post(config.mcpPath, async (req, res) => {
         return;
       }
 
-      const apiKey = extractApiKey(req);
-      if (!apiKey) {
-        res.status(401).json({
-          jsonrpc: "2.0",
-          id: null,
-          error: { code: -32001, message: "Missing Swapcard API key. Provide it via the Authorization header." },
-        });
-        return;
-      }
-
-      const server = buildServer(apiKey);
+      const server = buildServer(key);
       transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
         onsessioninitialized: (sid) => {
@@ -59,16 +144,11 @@ app.post(config.mcpPath, async (req, res) => {
   } catch (e) {
     console.error("MCP POST error:", e);
     if (!res.headersSent) {
-      res.status(500).json({
-        jsonrpc: "2.0",
-        id: null,
-        error: { code: -32603, message: "Internal server error" },
-      });
+      res.status(500).json({ jsonrpc: "2.0", id: null, error: { code: -32603, message: "Internal server error" } });
     }
   }
 });
 
-// SSE stream (GET) and session teardown (DELETE)
 const handleSessionRequest = async (req: express.Request, res: express.Response) => {
   const sessionId = req.headers["mcp-session-id"] as string | undefined;
   const transport = sessionId ? transports[sessionId] : undefined;
@@ -83,5 +163,5 @@ app.get(config.mcpPath, handleSessionRequest);
 app.delete(config.mcpPath, handleSessionRequest);
 
 app.listen(config.port, () => {
-  console.log(`swapcard-mcp listening on :${config.port}  (MCP at ${config.mcpPath})`);
+  console.log(`swapcard-mcp listening on :${config.port}  (MCP at ${config.mcpPath}, issuer ${ISSUER_URL})`);
 });
