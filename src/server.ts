@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerReadTools } from "./tools/reads.js";
 import { registerWriteTools } from "./tools/writes.js";
+import { registerAnalyticsTool } from "./tools/analytics.js";
 import { registerPassthroughTools } from "./tools/passthrough.js";
 
 /**
@@ -19,6 +20,7 @@ export function buildServer(apiKey: string): McpServer {
 
   registerReadTools(server, apiKey);
   registerWriteTools(server, apiKey);
+  registerAnalyticsTool(server, apiKey);
   registerPassthroughTools(server, apiKey);
 
   return server;
