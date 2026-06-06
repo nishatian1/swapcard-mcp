@@ -18,4 +18,6 @@ export const config = {
   tokenEncryptionSecret: process.env.TOKEN_ENCRYPTION_SECRET ?? "",
   /** Optional dev fallback. Real key comes from each request's Authorization header. */
   fallbackApiKey: process.env.SWAPCARD_API_KEY ?? "",
+  /** Optional key used only for the upstream warm-up heartbeat (keeps the Swapcard connection hot). */
+  warmupApiKey: process.env.WARMUP_API_KEY ?? "",
 } as const;

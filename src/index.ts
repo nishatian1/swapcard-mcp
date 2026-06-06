@@ -6,6 +6,7 @@ import { mcpAuthRouter, getOAuthProtectedResourceMetadataUrl } from "@modelconte
 import { config } from "./config.js";
 import { buildServer } from "./server.js";
 import { swapcardGraphQL } from "./swapcard/client.js";
+import { configureHttp, startWarmup } from "./swapcard/http.js";
 import { swapcardOAuthProvider } from "./oauth/provider.js";
 import { createAuthCode } from "./oauth/store.js";
 import { renderKeyPage } from "./oauth/page.js";
@@ -15,8 +16,11 @@ const RESOURCE_URL = config.publicBaseUrl; // e.g. https://mcp.fhsagents.site/sw
 const ISSUER_URL = new URL(RESOURCE_URL).origin; // e.g. https://mcp.fhsagents.site
 const resourceMetadataUrl = getOAuthProtectedResourceMetadataUrl(new URL(RESOURCE_URL));
 
+configureHttp(); // long-lived keep-alive to Swapcard (avoids cold-start latency)
+
 const app = express();
 app.disable("x-powered-by");
+app.set("trust proxy", 1); // behind Caddy; needed for correct client IP + rate-limit middleware
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true, name: "swapcard-mcp", version: "0.1.0" });
@@ -163,5 +167,6 @@ app.get(config.mcpPath, handleSessionRequest);
 app.delete(config.mcpPath, handleSessionRequest);
 
 app.listen(config.port, () => {
+  startWarmup(); // heartbeat keeps the Swapcard connection hot
   console.log(`swapcard-mcp listening on :${config.port}  (MCP at ${config.mcpPath}, issuer ${ISSUER_URL})`);
 });

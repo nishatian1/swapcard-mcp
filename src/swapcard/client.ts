@@ -53,6 +53,7 @@ export async function swapcardGraphQL<T = unknown>(
 ): Promise<{ data: T; rateLimit: RateLimitInfo }> {
   const endpoint = opts?.endpoint ?? SWAPCARD_ENDPOINTS.eventAdmin;
   const maxAttempts = 4;
+  const started = Date.now();
 
   for (let attempt = 1; ; attempt++) {
     let resp: Response;
@@ -114,6 +115,8 @@ export async function swapcardGraphQL<T = unknown>(
       });
     }
 
+    const ms = Date.now() - started;
+    if (ms > 1500) console.warn(`[swapcard] slow query ${ms}ms (attempt ${attempt})`);
     return { data: body.data as T, rateLimit };
   }
 }
