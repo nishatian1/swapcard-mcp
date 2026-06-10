@@ -12,8 +12,8 @@ import { createAuthCode } from "./oauth/store.js";
 import { renderKeyPage } from "./oauth/page.js";
 import { isOurToken, readToken } from "./oauth/tokens.js";
 
-const RESOURCE_URL = config.publicBaseUrl; // e.g. https://mcp.fhsagents.site/swapcard
-const ISSUER_URL = new URL(RESOURCE_URL).origin; // e.g. https://mcp.fhsagents.site
+const RESOURCE_URL = config.publicBaseUrl; // e.g. https://mcp.example.com/swapcard
+const ISSUER_URL = new URL(RESOURCE_URL).origin; // e.g. https://mcp.example.com
 const resourceMetadataUrl = getOAuthProtectedResourceMetadataUrl(new URL(RESOURCE_URL));
 
 configureHttp(); // long-lived keep-alive to Swapcard (avoids cold-start latency)

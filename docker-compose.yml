@@ -1,14 +1,10 @@
-# Deploy on KVM8. Reached by Caddy via the shared network by container name.
-# No ports published (Docker bypasses UFW — public access only via Caddy/443).
+# Generic self-host compose. Put a TLS-terminating reverse proxy (Caddy, nginx, Traefik)
+# in front of port 8090 and set PUBLIC_BASE_URL to the public URL it serves.
 services:
   swapcard-mcp:
     build: .
     container_name: swapcard-mcp
     restart: unless-stopped
     env_file: .env
-    networks:
-      - fhs-enrichment_default
-
-networks:
-  fhs-enrichment_default:
-    external: true
+    ports:
+      - "8090:8090"

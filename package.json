@@ -4,6 +4,12 @@
   "private": true,
   "type": "module",
   "description": "MCP server exposing the Swapcard organizer API (Content + Analytics) as tools for Claude.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nishatian1/swapcard-mcp.git"
+  },
+  "keywords": ["mcp", "model-context-protocol", "swapcard", "graphql", "claude", "events"],
   "engines": {
     "node": ">=20"
   },
