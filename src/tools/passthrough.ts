@@ -21,6 +21,7 @@ export function registerPassthroughTools(server: McpServer, apiKey: string): voi
     "graphql_query",
     {
       title: "Run a raw GraphQL query",
+      annotations: { readOnlyHint: true },
       description:
         "Execute an arbitrary read-only GraphQL query against the Swapcard Content API " +
         "(https://developer.swapcard.com/event-admin/graphql). Use this for anything the featured " +
@@ -81,6 +82,7 @@ export function registerPassthroughTools(server: McpServer, apiKey: string): voi
     "introspect_schema",
     {
       title: "Introspect the Swapcard schema",
+      annotations: { readOnlyHint: true },
       description:
         "Discover the Swapcard GraphQL schema. With no argument, lists all root query + mutation names. " +
         "With a typeName (e.g. 'EventPersonFilter', 'Mutation', 'Event'), returns that type's fields, " +

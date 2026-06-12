@@ -102,6 +102,7 @@ export function registerAnalyticsTool(server: McpServer, apiKey: string): void {
     "get_analytics",
     {
       title: "Get event analytics",
+      annotations: { readOnlyHint: true },
       description:
         "Stream user-action analytics for one or more events (e.g. event_show, exhibitor views, " +
         "document opens, session views). Returns a summary (counts by event type, unique users) plus " +

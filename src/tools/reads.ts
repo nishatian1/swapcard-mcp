@@ -22,6 +22,7 @@ export function registerReadTools(server: McpServer, apiKey: string): void {
     "list_communities",
     {
       title: "List Swapcard communities",
+      annotations: { readOnlyHint: true },
       description:
         "List the Swapcard communities this API key can access (id + name + slug). " +
         "Use a returned community id as communityId for search_exhibitors / search_sessions.",
@@ -47,6 +48,7 @@ export function registerReadTools(server: McpServer, apiKey: string): void {
     "search_events",
     {
       title: "Search / list events",
+      annotations: { readOnlyHint: true },
       description:
         "List events the key can access. Filter by ids or slugs, or page through all. " +
         "Returns core event fields incl. begins/ends, timezone, community. " +
@@ -77,6 +79,7 @@ export function registerReadTools(server: McpServer, apiKey: string): void {
     "search_people",
     {
       title: "Search event people",
+      annotations: { readOnlyHint: true },
       description:
         "Search attendees/speakers in an event (by name/email/etc. via `search`). " +
         "Returns profile fields. For advanced filters/sort, see introspect_schema('EventPersonFilter').",
@@ -111,6 +114,7 @@ export function registerReadTools(server: McpServer, apiKey: string): void {
     "search_exhibitors",
     {
       title: "Search exhibitors",
+      annotations: { readOnlyHint: true },
       description:
         "Search exhibitors in a community. Returns core exhibitor fields. " +
         "For advanced filter/sort, see introspect_schema('CommunityExhibitorsFilterInput').",
@@ -145,6 +149,7 @@ export function registerReadTools(server: McpServer, apiKey: string): void {
     "search_sessions",
     {
       title: "Search agenda sessions",
+      annotations: { readOnlyHint: true },
       description:
         "Search agenda sessions ('plannings') in a community. Returns title, times (UTC), place, format. " +
         "For advanced filter/sort, see introspect_schema('EventPlanningFilterInput').",
@@ -179,6 +184,7 @@ export function registerReadTools(server: McpServer, apiKey: string): void {
     "search_meetings",
     {
       title: "Search meetings",
+      annotations: { readOnlyHint: true },
       description:
         "Search meetings in an event. Returns status, slot times, and participants. " +
         "For advanced filters/sort, see introspect_schema('MeetingFilterInput').",
@@ -213,6 +219,7 @@ export function registerReadTools(server: McpServer, apiKey: string): void {
     "list_sponsors",
     {
       title: "List sponsors",
+      annotations: { readOnlyHint: true },
       description: "List sponsors for an event (optionally filter by ids or search). Returns name, logo, type, category.",
       inputSchema: {
         eventId: z.string().describe("Event id (from search_events)."),
