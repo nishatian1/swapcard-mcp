@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import express from "express";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
-import { mcpAuthRouter, getOAuthProtectedResourceMetadataUrl } from "@modelcontextprotocol/sdk/server/auth/router.js";
+import { mcpAuthRouter, getOAuthProtectedResourceMetadataUrl, createOAuthMetadata } from "@modelcontextprotocol/sdk/server/auth/router.js";
 import { config } from "./config.js";
 import { buildServer } from "./server.js";
 import { swapcardGraphQL } from "./swapcard/client.js";
@@ -13,8 +13,20 @@ import { renderKeyPage } from "./oauth/page.js";
 import { isOurToken, readToken } from "./oauth/tokens.js";
 
 const RESOURCE_URL = config.publicBaseUrl; // e.g. https://mcp.example.com/swapcard
-const ISSUER_URL = new URL(RESOURCE_URL).origin; // e.g. https://mcp.example.com
+// Use a PATH-BASED issuer (…/swapcard) rather than the host root, so our OAuth discovery
+// lives under our own path. This matters when another MCP server shares the same host and
+// owns the root /.well-known/oauth-authorization-server (e.g. mcp.bhatti.cloud also hosts a
+// GTM server). With a path issuer, clients discover us at the RFC 8414 path-aware location
+// /.well-known/oauth-authorization-server/<path>, which we serve below.
+const ISSUER_URL = new URL(RESOURCE_URL); // e.g. https://mcp.example.com/swapcard
 const resourceMetadataUrl = getOAuthProtectedResourceMetadataUrl(new URL(RESOURCE_URL));
+const oauthMetadata = createOAuthMetadata({
+  provider: swapcardOAuthProvider,
+  issuerUrl: ISSUER_URL,
+  scopesSupported: [],
+});
+// RFC 8414 path-aware location for the AS metadata, e.g. /.well-known/oauth-authorization-server/swapcard
+const asMetadataPath = `/.well-known/oauth-authorization-server${ISSUER_URL.pathname === "/" ? "" : ISSUER_URL.pathname}`;
 
 configureHttp(); // long-lived keep-alive to Swapcard (avoids cold-start latency)
 
@@ -26,13 +38,27 @@ app.get("/health", (_req, res) => {
   res.json({ ok: true, name: "swapcard-mcp", version: "0.1.0" });
 });
 
+// Path-aware AS metadata. The SDK only serves AS metadata at the host root
+// (/.well-known/oauth-authorization-server). When we share a host with another MCP server
+// that owns that root path, clients must find ours at the path-aware location instead, so we
+// serve it explicitly here with permissive CORS for browser-based clients.
+app.get(asMetadataPath, (_req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.json(oauthMetadata);
+});
+app.options(asMetadataPath, (_req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.sendStatus(204);
+});
+
 // --- OAuth (claude.ai web "paste your key" flow) ---
 // Serves /.well-known/oauth-authorization-server, /.well-known/oauth-protected-resource,
 // /authorize, /token, /register, /revoke. Each handler parses its own body.
 app.use(
   mcpAuthRouter({
     provider: swapcardOAuthProvider,
-    issuerUrl: new URL(ISSUER_URL),
+    issuerUrl: ISSUER_URL,
     resourceServerUrl: new URL(RESOURCE_URL),
     resourceName: "Swapcard MCP",
     scopesSupported: [],
