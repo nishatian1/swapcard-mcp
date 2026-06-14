@@ -2,12 +2,17 @@ import type { Response } from "express";
 import type { OAuthServerProvider } from "@modelcontextprotocol/sdk/server/auth/provider.js";
 import type { OAuthClientInformationFull, OAuthTokens } from "@modelcontextprotocol/sdk/shared/auth.js";
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
+import { config } from "../config.js";
 import { clientsStore, peekAuthCode, takeAuthCode } from "./store.js";
 import { issueToken, readToken } from "./tokens.js";
 import { renderKeyPage } from "./page.js";
 
 const ACCESS_TTL = 30 * 24 * 3600; // 30 days
 const REFRESH_TTL = 180 * 24 * 3600; // 180 days
+
+// Where the paste-key page submits — under our base path so it stays self-contained, e.g.
+// "/swapcard/oauth/key" (or "/oauth/key" when served at the host root).
+const KEY_FORM_PATH = `${new URL(config.publicBaseUrl).pathname.replace(/\/$/, "")}/oauth/key`;
 
 function tokensFor(swapcardKey: string): OAuthTokens {
   return {
@@ -33,6 +38,7 @@ export const swapcardOAuthProvider: OAuthServerProvider = {
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.send(
       renderKeyPage({
+        formAction: KEY_FORM_PATH,
         clientId: client.client_id,
         redirectUri: params.redirectUri,
         codeChallenge: params.codeChallenge,

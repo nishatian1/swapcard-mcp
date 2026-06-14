@@ -8,6 +8,8 @@ function esc(s: string): string {
 }
 
 export interface KeyPageParams {
+  /** Path the form submits to (e.g. "/swapcard/oauth/key"). */
+  formAction: string;
   clientId: string;
   redirectUri: string;
   codeChallenge: string;
@@ -56,7 +58,7 @@ export function renderKeyPage(p: KeyPageParams): string {
     <p>Paste your Swapcard API key to connect this Claude integration. Your key is sent over
        HTTPS and used only to talk to Swapcard on your behalf.</p>
     ${errorBlock}
-    <form method="POST" action="/oauth/key">
+    <form method="POST" action="${esc(p.formAction)}">
       ${hidden("client_id", p.clientId)}
       ${hidden("redirect_uri", p.redirectUri)}
       ${hidden("code_challenge", p.codeChallenge)}

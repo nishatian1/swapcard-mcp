@@ -2,7 +2,11 @@ import { randomUUID } from "node:crypto";
 import express from "express";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
-import { mcpAuthRouter, getOAuthProtectedResourceMetadataUrl, createOAuthMetadata } from "@modelcontextprotocol/sdk/server/auth/router.js";
+import { getOAuthProtectedResourceMetadataUrl, createOAuthMetadata } from "@modelcontextprotocol/sdk/server/auth/router.js";
+import { metadataHandler } from "@modelcontextprotocol/sdk/server/auth/handlers/metadata.js";
+import { authorizationHandler } from "@modelcontextprotocol/sdk/server/auth/handlers/authorize.js";
+import { tokenHandler } from "@modelcontextprotocol/sdk/server/auth/handlers/token.js";
+import { clientRegistrationHandler } from "@modelcontextprotocol/sdk/server/auth/handlers/register.js";
 import { config } from "./config.js";
 import { buildServer } from "./server.js";
 import { swapcardGraphQL } from "./swapcard/client.js";
@@ -12,21 +16,34 @@ import { createAuthCode } from "./oauth/store.js";
 import { renderKeyPage } from "./oauth/page.js";
 import { isOurToken, readToken } from "./oauth/tokens.js";
 
-const RESOURCE_URL = config.publicBaseUrl; // e.g. https://mcp.example.com/swapcard
-// Use a PATH-BASED issuer (…/swapcard) rather than the host root, so our OAuth discovery
-// lives under our own path. This matters when another MCP server shares the same host and
-// owns the root /.well-known/oauth-authorization-server (e.g. mcp.bhatti.cloud also hosts a
-// GTM server). With a path issuer, clients discover us at the RFC 8414 path-aware location
-// /.well-known/oauth-authorization-server/<path>, which we serve below.
+const RESOURCE_URL = config.publicBaseUrl.replace(/\/$/, ""); // e.g. https://mcp.example.com/swapcard
+// Use a PATH-BASED issuer (…/swapcard) and mount EVERY OAuth endpoint under that same path, so
+// the whole server is self-contained under one path and never collides at the host root with
+// another MCP server on the same domain (mcp.bhatti.cloud also hosts a GTM server that owns the
+// root /.well-known/oauth-authorization-server). Clients discover us at the RFC 8414 path-aware
+// location /.well-known/oauth-authorization-server/<path>.
 const ISSUER_URL = new URL(RESOURCE_URL); // e.g. https://mcp.example.com/swapcard
+const basePath = ISSUER_URL.pathname.replace(/\/$/, ""); // e.g. "/swapcard" ("" if served at the host root)
 const resourceMetadataUrl = getOAuthProtectedResourceMetadataUrl(new URL(RESOURCE_URL));
-const oauthMetadata = createOAuthMetadata({
-  provider: swapcardOAuthProvider,
-  issuerUrl: ISSUER_URL,
-  scopesSupported: [],
-});
-// RFC 8414 path-aware location for the AS metadata, e.g. /.well-known/oauth-authorization-server/swapcard
-const asMetadataPath = `/.well-known/oauth-authorization-server${ISSUER_URL.pathname === "/" ? "" : ISSUER_URL.pathname}`;
+
+// AS metadata, with the three endpoint URLs relocated under our base path. The SDK hardcodes
+// them at the host root, so we build the metadata and then override those URLs.
+const oauthMetadata = createOAuthMetadata({ provider: swapcardOAuthProvider, issuerUrl: ISSUER_URL, scopesSupported: [] });
+oauthMetadata.authorization_endpoint = `${RESOURCE_URL}/authorize`;
+oauthMetadata.token_endpoint = `${RESOURCE_URL}/token`;
+oauthMetadata.registration_endpoint = `${RESOURCE_URL}/register`;
+
+const protectedResourceMetadata = {
+  resource: RESOURCE_URL,
+  authorization_servers: [oauthMetadata.issuer],
+  scopes_supported: [] as string[],
+  resource_name: "Swapcard MCP",
+};
+
+// Discovery doc locations (all at the host root per the RFCs; path-suffixed for our base path).
+const asMetadataPath = `/.well-known/oauth-authorization-server${basePath}`;
+const prmPath = `/.well-known/oauth-protected-resource${basePath}`;
+const keyFormPath = `${basePath}/oauth/key`; // where the paste-key page submits
 
 configureHttp(); // long-lived keep-alive to Swapcard (avoids cold-start latency)
 
@@ -38,41 +55,32 @@ app.get("/health", (_req, res) => {
   res.json({ ok: true, name: "swapcard-mcp", version: "0.1.0" });
 });
 
-// Path-aware AS metadata. The SDK only serves AS metadata at the host root
-// (/.well-known/oauth-authorization-server). When we share a host with another MCP server
-// that owns that root path, clients must find ours at the path-aware location instead, so we
-// serve it explicitly here with permissive CORS for browser-based clients.
-app.get(asMetadataPath, (_req, res) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.json(oauthMetadata);
-});
-app.options(asMetadataPath, (_req, res) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-  res.sendStatus(204);
-});
+// --- OAuth (claude.ai / ChatGPT web "paste your key" flow) ---
+// Everything is mounted under our base path so it never collides at the host root with another
+// MCP server sharing this domain. We mount the SDK's auth handlers ourselves (the bundled
+// mcpAuthRouter hardcodes them at the root) and serve the discovery docs explicitly. Each
+// handler carries its own CORS, rate limiting, and body parsing.
+//
+// AS metadata is served at the RFC 8414 path-aware location (where spec clients look for a path
+// issuer) and also at the host root for standalone deployments; protected-resource metadata per
+// RFC 9728.
+app.use(asMetadataPath, metadataHandler(oauthMetadata));
+app.use("/.well-known/oauth-authorization-server", metadataHandler(oauthMetadata));
+app.use(prmPath, metadataHandler(protectedResourceMetadata));
 
-// --- OAuth (claude.ai web "paste your key" flow) ---
-// Serves /.well-known/oauth-authorization-server, /.well-known/oauth-protected-resource,
-// /authorize, /token, /register, /revoke. Each handler parses its own body.
-app.use(
-  mcpAuthRouter({
-    provider: swapcardOAuthProvider,
-    issuerUrl: ISSUER_URL,
-    resourceServerUrl: new URL(RESOURCE_URL),
-    resourceName: "Swapcard MCP",
-    scopesSupported: [],
-  }),
-);
+// Auth endpoints, all under the base path: …/authorize, …/token, …/register.
+app.use(`${basePath}/authorize`, authorizationHandler({ provider: swapcardOAuthProvider }));
+app.use(`${basePath}/token`, tokenHandler({ provider: swapcardOAuthProvider }));
+app.use(`${basePath}/register`, clientRegistrationHandler({ clientsStore: swapcardOAuthProvider.clientsStore }));
 
-// The authorize page posts here (NOT under /authorize/* — that prefix is owned by the SDK
-// auth router, whose body parser would consume this stream first). Validate the pasted key,
-// mint a one-time code, redirect back.
-app.post("/oauth/key", express.urlencoded({ extended: false }), async (req, res) => {
+// The authorize page posts the pasted key here (…/oauth/key). Validate it against Swapcard,
+// mint a one-time code, redirect back to the client.
+app.post(keyFormPath, express.urlencoded({ extended: false }), async (req, res) => {
   const { client_id, redirect_uri, code_challenge, state, scope, resource, apiKey } = req.body as Record<string, string>;
   const reRender = (error: string) =>
     res.status(400).send(
       renderKeyPage({
+        formAction: keyFormPath,
         clientId: client_id ?? "",
         redirectUri: redirect_uri ?? "",
         codeChallenge: code_challenge ?? "",
