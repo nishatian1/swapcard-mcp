@@ -9,3 +9,6 @@ _research/
 .DS_Store
 coverage/
 *.tsbuildinfo
+
+# Local enrichment/outreach tooling cache (not part of the server)
+enrichment/
