@@ -1,4 +1,11 @@
-# Swapcard MCP
+# Unofficial Swapcard MCP Server
+
+> **⚠️ Unofficial / community project.** This is an independent project built by an
+> organizer, **not affiliated with, endorsed by, or supported by Swapcard.** It is a
+> community wrapper over Swapcard's public Developer API — it is not a native Swapcard
+> feature, and Swapcard does not promote authenticating with an API key in a config
+> file. Swapcard has its own organizer MCP on their roadmap; for officially supported
+> tooling, refer to Swapcard directly. "Swapcard" is a trademark of its respective owner.
 
 An [MCP](https://modelcontextprotocol.io) server that exposes the **[Swapcard](https://www.swapcard.com) organizer API** (Content + Analytics) as tools, so event teams can operate Swapcard from inside Claude (claude.ai web, Claude Desktop, Claude Code) or any other MCP client.
 
